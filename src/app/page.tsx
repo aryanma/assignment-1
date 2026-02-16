@@ -1,4 +1,5 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-server";
+import { SignOut } from "./sign-out";
 
 interface Dorm {
   id: number;
@@ -7,6 +8,30 @@ interface Dorm {
 }
 
 export default async function Home() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 font-sans dark:bg-black">
+        <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
+          Columbia Dorms
+        </h1>
+        <p className="text-zinc-500 dark:text-zinc-400">
+          Sign in to view the dorms directory.
+        </p>
+        <a
+          href="/login"
+          className="rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+        >
+          Sign in with Google
+        </a>
+      </div>
+    );
+  }
+
   const { data: dorms, error } = await supabase
     .from("dorms")
     .select("id, short_name, full_name")
@@ -23,9 +48,17 @@ export default async function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
       <main className="mx-auto max-w-2xl">
-        <h1 className="mb-8 text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          Columbia Dorms
-        </h1>
+        <div className="mb-8 flex items-center justify-between">
+          <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            Columbia Dorms
+          </h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">
+              {user.email}
+            </span>
+            <SignOut />
+          </div>
+        </div>
         <div className="grid gap-4">
           {(dorms as Dorm[]).map((dorm) => (
             <div
