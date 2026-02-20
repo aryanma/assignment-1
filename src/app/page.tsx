@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { SignOut } from "./sign-out";
+import Link from "next/link";
 
 interface Dorm {
   id: number;
@@ -53,6 +54,12 @@ export default async function Home() {
             Columbia Dorms
           </h1>
           <div className="flex items-center gap-4">
+            <Link
+              href="/captions"
+              className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              Captions
+            </Link>
             <span className="text-sm text-zinc-500 dark:text-zinc-400">
               {user.email}
             </span>
