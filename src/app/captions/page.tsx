@@ -7,8 +7,14 @@ import Link from "next/link";
 interface Caption {
   id: string;
   content: string;
-  like_count: number;
 }
+
+interface CaptionVote {
+  caption_id: string;
+  vote_value: number;
+}
+
+export const dynamic = "force-dynamic";
 
 export default async function CaptionsPage() {
   const supabase = await createClient();
@@ -22,19 +28,31 @@ export default async function CaptionsPage() {
 
   const { data: captions, error } = await supabase
     .from("captions")
-    .select("id, content, like_count")
+    .select("id, content")
     .eq("is_public", true)
     .not("content", "is", null)
     .order("created_datetime_utc", { ascending: false })
     .limit(20);
 
-  if (error) {
+  if (error || !captions) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-red-500">Failed to load captions.</p>
       </div>
     );
   }
+
+  const captionIds = captions.map((c) => c.id);
+
+  const { data: votes } = await supabase
+    .from("caption_votes")
+    .select("caption_id, vote_value")
+    .in("caption_id", captionIds);
+
+  const voteCounts: Record<string, number> = {};
+  (votes as CaptionVote[] | null)?.forEach((v) => {
+    voteCounts[v.caption_id] = (voteCounts[v.caption_id] || 0) + v.vote_value;
+  });
 
   return (
     <div className="min-h-screen bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
@@ -65,12 +83,10 @@ export default async function CaptionsPage() {
               <p className="text-base text-black dark:text-zinc-50">
                 {caption.content}
               </p>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-sm text-zinc-400">
-                  {caption.like_count} likes
-                </span>
-                <VoteButtons captionId={caption.id} />
-              </div>
+              <VoteButtons
+                captionId={caption.id}
+                voteCount={voteCounts[caption.id] || 0}
+              />
             </div>
           ))}
         </div>
