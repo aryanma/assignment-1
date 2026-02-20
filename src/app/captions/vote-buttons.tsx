@@ -1,15 +1,27 @@
 "use client";
 
 import { vote } from "@/app/actions";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
 export function VoteButtons({ captionId }: { captionId: string }) {
   const [isPending, startTransition] = useTransition();
+  const [voted, setVoted] = useState<number | null>(null);
 
   function handleVote(value: number) {
     startTransition(async () => {
-      await vote(captionId, value);
+      const result = await vote(captionId, value);
+      if (!result.error) {
+        setVoted(value);
+      }
     });
+  }
+
+  if (voted !== null) {
+    return (
+      <span className="text-sm text-zinc-500">
+        {voted === 1 ? "👍 Upvoted" : "👎 Downvoted"}
+      </span>
+    );
   }
 
   return (

@@ -24,6 +24,7 @@ export default async function CaptionsPage() {
     .from("captions")
     .select("id, content, like_count")
     .eq("is_public", true)
+    .not("content", "is", null)
     .order("created_datetime_utc", { ascending: false })
     .limit(20);
 
