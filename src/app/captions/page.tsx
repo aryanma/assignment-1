@@ -12,6 +12,7 @@ interface Caption {
 interface CaptionVote {
   caption_id: string;
   vote_value: number;
+  profile_id: string;
 }
 
 export const dynamic = "force-dynamic";
@@ -46,12 +47,16 @@ export default async function CaptionsPage() {
 
   const { data: votes } = await supabase
     .from("caption_votes")
-    .select("caption_id, vote_value")
+    .select("caption_id, vote_value, profile_id")
     .in("caption_id", captionIds);
 
   const voteCounts: Record<string, number> = {};
+  const userVotes: Record<string, number> = {};
   (votes as CaptionVote[] | null)?.forEach((v) => {
     voteCounts[v.caption_id] = (voteCounts[v.caption_id] || 0) + v.vote_value;
+    if (v.profile_id === user.id) {
+      userVotes[v.caption_id] = v.vote_value;
+    }
   });
 
   return (
@@ -86,6 +91,7 @@ export default async function CaptionsPage() {
               <VoteButtons
                 captionId={caption.id}
                 voteCount={voteCounts[caption.id] || 0}
+                userVote={userVotes[caption.id] || 0}
               />
             </div>
           ))}
