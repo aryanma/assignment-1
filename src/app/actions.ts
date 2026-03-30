@@ -87,7 +87,7 @@ export async function vote(captionId: string, voteValue: number) {
       .from("caption_votes")
       .update({
         vote_value: voteValue,
-        modified_datetime_utc: new Date().toISOString(),
+        modified_by_user_id: user.id,
       })
       .eq("id", existing.id));
   } else {
@@ -96,7 +96,8 @@ export async function vote(captionId: string, voteValue: number) {
       vote_value: voteValue,
       profile_id: user.id,
       caption_id: captionId,
-      created_datetime_utc: new Date().toISOString(),
+      created_by_user_id: user.id,
+      modified_by_user_id: user.id,
     }));
   }
 
