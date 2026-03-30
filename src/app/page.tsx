@@ -60,6 +60,12 @@ export default async function Home() {
             >
               Captions
             </Link>
+            <Link
+              href="/upload"
+              className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              Upload
+            </Link>
             <span className="text-sm text-zinc-500 dark:text-zinc-400">
               {user.email}
             </span>
