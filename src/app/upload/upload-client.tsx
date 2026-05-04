@@ -1,14 +1,23 @@
 "use client";
 
-import { getPresignedUrl, registerImage, generateCaptions } from "@/app/actions";
-import { useState, useRef } from "react";
+import { getPresignedUrl, registerImage, generateCaptions, publishCaption } from "@/app/actions";
+import { useState, useRef, useTransition, useEffect } from "react";
 import { NavBar } from "@/app/components/nav-bar";
 import Link from "next/link";
 
 interface Caption {
   id: string;
   content: string;
+  published?: boolean;
 }
+
+interface PersistedUpload {
+  imageId: string;
+  imageUrl: string;
+  captions: Caption[];
+}
+
+const STORAGE_KEY = "crackd:lastUpload";
 
 const STEPS = [
   "Getting upload URL",
@@ -32,7 +41,7 @@ function Stepper({ currentStep }: { currentStep: number }) {
                     : "bg-zinc-200 text-zinc-400 dark:bg-zinc-700"
               }`}
             >
-              {i < currentStep ? "\u2713" : i + 1}
+              {i < currentStep ? "✓" : i + 1}
             </div>
             <span
               className={`hidden text-xs sm:inline ${
@@ -57,14 +66,101 @@ function Stepper({ currentStep }: { currentStep: number }) {
   );
 }
 
+function CaptionRow({
+  caption,
+  onPublished,
+}: {
+  caption: Caption;
+  onPublished: (id: string) => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handlePublish() {
+    if (!caption.id) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await publishCaption(caption.id);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        onPublished(caption.id);
+      }
+    });
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="min-w-0 flex-1">
+        <p className="text-base text-black dark:text-zinc-50">
+          &ldquo;{caption.content}&rdquo;
+        </p>
+        {error && (
+          <p className="mt-1 text-xs text-red-500">{error}</p>
+        )}
+      </div>
+      {caption.id && (
+        caption.published ? (
+          <span className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            Published
+          </span>
+        ) : (
+          <button
+            onClick={handlePublish}
+            disabled={isPending}
+            className="flex-shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-700"
+          >
+            {isPending ? "Publishing..." : "Publish"}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
 export function UploadClient({ userEmail }: { userEmail: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [imageId, setImageId] = useState<string | null>(null);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [step, setStep] = useState(-1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [restored, setRestored] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Restore from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw) as PersistedUpload;
+      if (data.imageId && data.imageUrl && Array.isArray(data.captions)) {
+        setImageId(data.imageId);
+        setPreview(data.imageUrl);
+        setCaptions(data.captions);
+        setStep(4);
+        setRestored(true);
+      }
+    } catch {
+      // ignore corrupt storage
+    }
+  }, []);
+
+  function persist(next: PersistedUpload | null) {
+    try {
+      if (next === null) {
+        localStorage.removeItem(STORAGE_KEY);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      }
+    } catch {
+      // ignore quota/permission errors
+    }
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0];
@@ -72,8 +168,32 @@ export function UploadClient({ userEmail }: { userEmail: string }) {
     setFile(selected);
     setPreview(URL.createObjectURL(selected));
     setCaptions([]);
+    setImageId(null);
     setError("");
     setStep(-1);
+    setRestored(false);
+  }
+
+  function handleClear() {
+    setFile(null);
+    setPreview(null);
+    setImageId(null);
+    setCaptions([]);
+    setStep(-1);
+    setError("");
+    setRestored(false);
+    persist(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleCaptionPublished(id: string) {
+    setCaptions((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, published: true } : c));
+      if (imageId && preview) {
+        persist({ imageId, imageUrl: preview, captions: next });
+      }
+      return next;
+    });
   }
 
   async function handleUpload() {
@@ -81,6 +201,7 @@ export function UploadClient({ userEmail }: { userEmail: string }) {
     setLoading(true);
     setError("");
     setCaptions([]);
+    setImageId(null);
 
     try {
       setStep(0);
@@ -103,8 +224,25 @@ export function UploadClient({ userEmail }: { userEmail: string }) {
       const result = await generateCaptions(registered.imageId);
       if (result.error) throw new Error(result.error);
 
-      setCaptions(Array.isArray(result) ? result : []);
+      const newCaptions: Caption[] = (Array.isArray(result) ? result : []).map(
+        (c: { id: string; content: string }) => ({
+          id: c.id,
+          content: c.content,
+          published: false,
+        })
+      );
+
+      setImageId(registered.imageId);
+      setPreview(presigned.cdnUrl);
+      setCaptions(newCaptions);
       setStep(4);
+      setRestored(false);
+
+      persist({
+        imageId: registered.imageId,
+        imageUrl: presigned.cdnUrl,
+        captions: newCaptions,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -137,7 +275,7 @@ export function UploadClient({ userEmail }: { userEmail: string }) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
             <span className="text-sm text-zinc-500 dark:text-zinc-400">
-              {file ? file.name : "Click to select an image"}
+              {file ? file.name : restored ? "Click to upload a different image" : "Click to select an image"}
             </span>
           </button>
 
@@ -149,16 +287,18 @@ export function UploadClient({ userEmail }: { userEmail: string }) {
             />
           )}
 
-          <button
-            onClick={handleUpload}
-            disabled={!file || loading}
-            className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-          >
-            {loading ? "Processing..." : "Generate Captions"}
-          </button>
+          {!restored && (
+            <button
+              onClick={handleUpload}
+              disabled={!file || loading}
+              className="mt-4 w-full rounded-lg bg-black px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            >
+              {loading ? "Processing..." : "Generate Captions"}
+            </button>
+          )}
 
           {loading && step >= 0 && <Stepper currentStep={step} />}
-          {!loading && step === 4 && <Stepper currentStep={4} />}
+          {!loading && step === 4 && !restored && <Stepper currentStep={4} />}
 
           {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
         </div>
@@ -166,26 +306,41 @@ export function UploadClient({ userEmail }: { userEmail: string }) {
         {captions.length > 0 && (
           <div className="mt-8">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-black dark:text-zinc-50">
-                Generated Captions
-              </h2>
-              <Link
-                href="/captions"
-                className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              >
-                View all captions &rarr;
-              </Link>
+              <div>
+                <h2 className="text-xl font-semibold text-black dark:text-zinc-50">
+                  Generated Captions
+                </h2>
+                {restored && (
+                  <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    Restored from your last upload
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleClear}
+                  className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                >
+                  Clear
+                </button>
+                <Link
+                  href={imageId ? `/captions?image_id=${imageId}` : "/captions"}
+                  className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                >
+                  {imageId ? "View captions for this image →" : "View all captions →"}
+                </Link>
+              </div>
             </div>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Click <span className="font-medium">Publish</span> to add a caption to the public rating feed.
+            </p>
             <div className="grid gap-3">
               {captions.map((caption, i) => (
-                <div
+                <CaptionRow
                   key={caption.id || i}
-                  className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
-                >
-                  <p className="text-base text-black dark:text-zinc-50">
-                    &ldquo;{caption.content}&rdquo;
-                  </p>
-                </div>
+                  caption={caption}
+                  onPublished={handleCaptionPublished}
+                />
               ))}
             </div>
           </div>

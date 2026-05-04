@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 
 const API_BASE = "https://api.almostcrackd.ai";
 
+
+
 async function getAccessToken() {
   const supabase = await createClient();
   const {
@@ -100,6 +102,49 @@ export async function vote(captionId: string, voteValue: number) {
       modified_by_user_id: user.id,
     }));
   }
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/captions");
+  return { success: true };
+}
+
+export async function publishCaption(captionId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Not authenticated" };
+  }
+
+  const { data: caption, error: fetchError } = await supabase
+    .from("captions")
+    .select("id, profile_id, is_public")
+    .eq("id", captionId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: fetchError.message };
+  }
+  if (!caption) {
+    return { error: "Caption not found" };
+  }
+  if (caption.profile_id !== user.id) {
+    return { error: "You can only publish your own captions" };
+  }
+
+  const { error } = await supabase
+    .from("captions")
+    .update({
+      is_public: true,
+      modified_by_user_id: user.id,
+    })
+    .eq("id", captionId)
+    .eq("profile_id", user.id);
 
   if (error) {
     return { error: error.message };

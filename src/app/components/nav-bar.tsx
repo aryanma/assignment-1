@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase-browser";
 import { useRouter } from "next/navigation";
 
 const links = [
-  { href: "/", label: "Dorms" },
+  { href: "/", label: "Gallery" },
   { href: "/captions", label: "Captions" },
   { href: "/upload", label: "Upload" },
 ];
